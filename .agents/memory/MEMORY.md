@@ -1,0 +1,1 @@
+- [LAKE Web Stack](lake-web-stack.md) — Flask+SocketIO+eventlet on port 5000; async checker runs in threads via asyncio.run(); static files in static/, templates in templates/.

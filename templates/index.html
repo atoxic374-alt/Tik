@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>◈ LAKE • Username Tool</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <canvas id="particles"></canvas>
+
+  <!-- ── TOP BAR ── -->
+  <header class="topbar">
+    <div class="logo">
+      <span class="logo-icon">◈</span>
+      <span class="logo-name">LAKE</span>
+      <span class="logo-sub">· USERNAME TOOL</span>
+    </div>
+    <div class="pill" id="pill"><span class="pill-dot">◉</span> IDLE</div>
+    <div class="ip-box" id="ip-box">
+      <span class="ip-label">IP</span>
+      <span class="ip-value" id="current-ip">—</span>
+    </div>
+    <div class="clock" id="clock"></div>
+    <div class="topbar-btns">
+      <button class="btn btn-yellow" onclick="testRun()">⚡ TEST 10</button>
+      <button class="btn btn-green"  onclick="startCheck()">▶ START</button>
+      <button class="btn btn-red"    onclick="stopCheck()">■ STOP</button>
+    </div>
+  </header>
+
+  <!-- ── TOP GLOW LINE ── -->
+  <div class="topline"></div>
+
+  <!-- ── CONFIG STRIP ── -->
+  <div class="config-strip">
+    <div class="cfg-block">
+      <span class="cfg-label">MODE</span>
+      <div class="cfg-widget">
+        <label class="radio-lbl"><input type="radio" name="mode" value="generate" checked> Generate</label>
+        <label class="radio-lbl"><input type="radio" name="mode" value="file"> Load File</label>
+      </div>
+    </div>
+    <div class="vsep"></div>
+    <div class="cfg-block">
+      <span class="cfg-label">AMOUNT</span>
+      <div class="cfg-widget"><input class="cfg-input" id="cfg-amount" type="number" value="20" min="1" max="9999"></div>
+    </div>
+    <div class="vsep"></div>
+    <div class="cfg-block">
+      <span class="cfg-label">LENGTH</span>
+      <div class="cfg-widget"><input class="cfg-input" id="cfg-length" type="number" value="5" min="1" max="24"></div>
+    </div>
+    <div class="vsep"></div>
+    <div class="cfg-block">
+      <span class="cfg-label">PROXIES</span>
+      <div class="cfg-widget">
+        <button class="cfg-btn" onclick="loadProxies()">⟳ Load proxies.txt</button>
+        <span class="proxy-badge" id="proxy-badge">0 loaded</span>
+        <button class="cfg-btn-sm" onclick="openProxyModal()">🔍 Test</button>
+        <label class="check-lbl">
+          <input type="checkbox" id="rotating-check" onchange="toggleRotating()">
+          <span>Rotating</span>
+        </label>
+      </div>
+    </div>
+    <div class="vsep"></div>
+    <div class="cfg-block cfg-grow">
+      <span class="cfg-label">WEBHOOK</span>
+      <div class="cfg-widget">
+        <input class="cfg-input cfg-wide" id="cfg-webhook" type="text" placeholder="Discord Webhook URL (اختياري)">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CONFIG STRIP 2 — CLAIMER ── -->
+  <div class="config-strip config-strip-claimer">
+    <div class="cfg-block">
+      <span class="cfg-label">
+        ACCOUNT &nbsp;<span class="status-dot" id="acct-dot" title="جلسة غير مضبوطة">●</span>
+      </span>
+      <div class="cfg-widget">
+        <input class="cfg-input" id="cfg-session" type="password"
+               placeholder="sessionid cookie من TikTok" style="width:240px"
+               oninput="accountDirty()">
+        <button class="cfg-btn" onclick="setAccount()">✓ تطبيق</button>
+        <span class="cfg-hint" onclick="toggleHint('hint-session')" title="كيف أحصل عليه؟">?</span>
+      </div>
+    </div>
+    <div class="vsep"></div>
+    <div class="cfg-block">
+      <span class="cfg-label">
+        2CAPTCHA &nbsp;<span class="status-dot" id="cap-dot" title="API key غير مضبوط">●</span>
+      </span>
+      <div class="cfg-widget">
+        <input class="cfg-input" id="cfg-captcha" type="password"
+               placeholder="API key" style="width:170px"
+               oninput="captchaDirty()">
+        <button class="cfg-btn" onclick="setCaptchaKey()">✓ تطبيق</button>
+        <button class="cfg-btn-sm" onclick="test2captcha()">💰 رصيد</button>
+        <span class="cap-bal" id="cap-bal"></span>
+      </div>
+    </div>
+    <div class="vsep"></div>
+    <div class="cfg-block">
+      <span class="cfg-label">AUTO-CLAIM</span>
+      <div class="cfg-widget">
+        <label class="check-lbl">
+          <input type="checkbox" id="auto-claim-chk" onchange="toggleAutoClaim()">
+          <span>بعد الفحص الدقيق</span>
+        </label>
+        <label class="check-lbl">
+          <input type="checkbox" id="uncertain-chk" onchange="toggleAutoClaim()">
+          <span>+ غير المؤكدة</span>
+        </label>
+      </div>
+    </div>
+    <div class="vsep"></div>
+    <div class="cfg-block cfg-grow">
+      <span class="cfg-label">⚠ المشاكل المعروفة</span>
+      <div class="cfg-widget issues-row">
+        <span class="issue-badge r">30y cooldown</span>
+        <span class="issue-badge y">Rate-limit / IP</span>
+        <span class="issue-badge p">CAPTCHA</span>
+        <span class="issue-badge s">Session expiry</span>
+        <span class="issue-badge s">Device tokens</span>
+      </div>
+    </div>
+  </div>
+  <!-- Session-cookie hint -->
+  <div class="hint-box" id="hint-session" style="display:none">
+    <strong>كيف تحصل على sessionid:</strong><br>
+    1. افتح <b>www.tiktok.com</b> وسجّل دخولك<br>
+    2. اضغط F12 ← Application ← Cookies ← www.tiktok.com<br>
+    3. ابحث عن <code>sessionid</code> وانسخ قيمته<br>
+    4. الصقه في الحقل أعلاه واضغط ✓ تطبيق
+  </div>
+
+  <!-- ── PROGRESS BAR ── -->
+  <div class="progress-track">
+    <div class="progress-fill" id="progress-fill"></div>
+    <div class="progress-shimmer" id="progress-shimmer"></div>
+  </div>
+
+  <!-- ── MAIN CONTENT ── -->
+  <main class="content">
+    <!-- Left: Log -->
+    <section class="panel log-panel">
+      <div class="panel-hdr">
+        <span class="panel-dot" style="background:var(--accent)"></span>
+        <span class="panel-title">ACTIVITY LOG</span>
+        <button class="clear-btn" onclick="clearLog()">✕ Clear</button>
+      </div>
+      <div class="log-wrap" id="log-wrap"></div>
+    </section>
+
+    <div class="col-div"></div>
+
+    <!-- Right column -->
+    <aside class="right-col">
+      <div class="panel-hdr">
+        <span class="panel-dot" style="background:var(--purple)"></span>
+        <span class="panel-title">STATISTICS</span>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card" style="--c:var(--accent)">
+          <div class="stat-lbl">CHECKED</div>
+          <div class="stat-val" id="s-checked">0</div>
+        </div>
+        <div class="stat-card" style="--c:var(--green)">
+          <div class="stat-lbl">AVAILABLE</div>
+          <div class="stat-val" id="s-avail">0</div>
+        </div>
+        <div class="stat-card" style="--c:var(--subtext)">
+          <div class="stat-lbl">TAKEN</div>
+          <div class="stat-val" id="s-taken">0</div>
+        </div>
+        <div class="stat-card" style="--c:var(--red)">
+          <div class="stat-lbl">ERRORS</div>
+          <div class="stat-val" id="s-errors">0</div>
+        </div>
+      </div>
+
+      <div class="panel-hdr" style="margin-top:14px">
+        <span class="panel-dot" style="background:var(--green)"></span>
+        <span class="panel-title">HITS</span>
+      </div>
+      <div class="hits-wrap" id="hits-wrap"></div>
+    </aside>
+  </main>
+
+  <!-- ── STATUS BAR ── -->
+  <footer class="statusbar">
+    <span id="status-txt">⚡&nbsp;&nbsp;Idle</span>
+    <span class="sb-sep">|</span>
+    <span class="sb-version">LAKE v2 — Web Edition</span>
+  </footer>
+
+  <!-- ── DEEP CHECK MODAL ── -->
+  <div class="overlay" id="deep-overlay" onclick="closeDeepModal(event)" style="display:none">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-hdr">
+        <span>◈&nbsp;&nbsp;DEEP VERIFICATION</span>
+        <button class="modal-x" onclick="closeDeepModal()">✕</button>
+      </div>
+      <div class="modal-sep"></div>
+      <p class="modal-info" id="deep-info"></p>
+      <div class="modal-row">
+        <span class="cfg-label">عدد اليوزرات:</span>
+        <input class="cfg-input" id="deep-count" type="number" value="20" min="1" style="width:65px;margin:0 10px">
+        <span class="cfg-label dim" id="deep-max"></span>
+      </div>
+      <div class="modal-body" id="deep-body"></div>
+      <div class="modal-prog" id="deep-prog"></div>
+      <div class="modal-foot">
+        <button class="btn btn-green" onclick="startDeepCheck()">▶ ابدأ الفحص الدقيق</button>
+        <button class="btn btn-red"   onclick="closeDeepModal()">✕ إغلاق</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PROXY TEST MODAL ── -->
+  <div class="overlay" id="proxy-overlay" onclick="closeProxyModal(event)" style="display:none">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-hdr">
+        <span>◈&nbsp;&nbsp;PROXY TESTER</span>
+        <button class="modal-x" onclick="closeProxyModal()">✕</button>
+      </div>
+      <div class="modal-sep"></div>
+      <div class="modal-body" id="proxy-body"></div>
+      <div class="modal-prog" id="proxy-prog"></div>
+      <div class="modal-foot">
+        <button class="btn btn-green" onclick="runProxyTest()">▶ ابدأ الفحص</button>
+        <button class="btn btn-red"   onclick="closeProxyModal()">✕ إغلاق</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
