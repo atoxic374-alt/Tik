@@ -512,12 +512,13 @@ class Claimer:
     EDIT_URL = "https://www.tiktok.com/api/user/edit/"
     HOME_URL = "https://www.tiktok.com/"
 
-    _OK       = {0}
+    _OK       = {0, 255}          # code 0 ONLY when status_msg == ""
     _CAPTCHA  = {10101, 10102, 10103, 10104}
     _COOLDOWN = {10105, 10106}
-    _TAKEN    = {10108, 10109}
-    _SESSION  = {8, 10003, 10115, 10116}
+    _TAKEN    = {10108, 10109, 10217, 10219, 10220}
+    _SESSION  = {8, 10003, 10112, 10113, 10115, 10116, 10119, 10120, 10155}
     _RATE     = {4, 10000}
+    _URL_MISMATCH = "url doesn't match"   # means session invalid / routing error
 
     def __init__(self, session_id: str, captcha_key: str = "", ms_token: str = ""):
         self.session_id  = session_id.strip()
@@ -607,6 +608,12 @@ class Claimer:
             res = await self._do_edit(session, username, proxy,
                                        {"X-CSRFToken": csrf} if csrf else {})
             code = res["code"]
+
+            status_msg = res.get("data", {}).get("status_msg", "")
+
+            # "url doesn't match" with code 0 = session not authenticated
+            if code in self._OK and status_msg == self._URL_MISMATCH:
+                return {"ok": False, "reason": "session_invalid", "username": username}
 
             if code in self._OK:
                 return {"ok": True, "username": username}
@@ -955,6 +962,17 @@ def on_connect_claimer():
 
 # ── Account Verification ─────────────────────────────────
 async def verify_account_session(session_id: str, ms_token: str = "") -> dict:
+    """
+    Verify TikTok session by probing the edit endpoint.
+    TikTok uses client-side rendering so we can't get user info from page HTML.
+    Instead we probe the edit API — the response code tells us if the session is valid:
+      - code=0, msg=""           → session valid (username changed — unlikely on probe)
+      - code=10108/10109         → session valid (probe username taken)
+      - code=10105/10106         → session valid (cooldown active)
+      - code=10101-10104         → session valid (captcha required)
+      - code=0, msg≠""           → session INVALID (routing/auth error)
+      - code=8/10003/10115/10116 → session INVALID
+    """
     cookies = {"sessionid": session_id}
     if ms_token: cookies["msToken"] = ms_token
     hdrs = {
@@ -962,49 +980,95 @@ async def verify_account_session(session_id: str, ms_token: str = "") -> dict:
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://www.tiktok.com/",
         "Accept-Language": "en-US,en;q=0.9",
+        "Origin": "https://www.tiktok.com",
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
     }
+
+    SESSION_VALID_CODES   = {0, 255, 10108, 10109, 10105, 10106, 10101, 10102, 10103,
+                              10104, 10217, 10219, 10220, 10164, 10165, 10107}
+    SESSION_INVALID_CODES = {8, 10003, 10112, 10113, 10115, 10116, 10119, 10120, 10155, -101}
+    URL_MISMATCH = "url doesn't match"
+
     connector = aiohttp.TCPConnector(ssl=False)
     async with aiohttp.ClientSession(connector=connector, cookies=cookies) as sess:
-        # Method 1: recommend/user/self
-        try:
-            async with sess.get(
-                "https://www.tiktok.com/api/recommend/user/self/",
-                headers=hdrs, timeout=aiohttp.ClientTimeout(total=12)
-            ) as r:
-                if r.status == 200:
-                    data = await r.json(content_type=None)
-                    user = data.get("user") or data.get("userInfo", {}).get("user", {})
-                    if user and user.get("uniqueId"):
-                        return {
-                            "ok": True,
-                            "username": user["uniqueId"],
-                            "nickname": user.get("nickname", user["uniqueId"]),
-                            "avatar":  (user.get("avatarMedium") or user.get("avatarThumb") or "").replace("\\u002F", "/"),
-                            "fans":    user.get("followerCount", 0),
-                        }
-        except Exception:
-            pass
 
-        # Method 2: parse main page HTML
+        # ── Step 1: get CSRF ────────────────────────────────
+        csrf = ""
         try:
             async with sess.get(
                 "https://www.tiktok.com/",
-                headers={**hdrs, "Accept": "text/html,*/*"},
-                timeout=aiohttp.ClientTimeout(total=15)
+                headers={"User-Agent": USER_AGENTS[0], "Accept": "text/html,*/*"},
+                timeout=aiohttp.ClientTimeout(total=10)
             ) as r:
-                if r.status == 200:
-                    html = await r.text()
-                    m = re.search(r'"uniqueId":"([a-zA-Z0-9._]{1,30})"', html)
-                    if m:
-                        uid = m.group(1)
-                        av  = re.search(r'"avatarThumb":"([^"]+)"', html)
-                        avatar = av.group(1).replace("\\u002F", "/") if av else ""
-                        return {"ok": True, "username": uid, "nickname": uid,
-                                "avatar": avatar, "fans": 0}
+                for name in r.cookies:
+                    if "csrf" in name.lower():
+                        csrf = r.cookies[name].value
+                        break
+                if csrf:
+                    hdrs["X-CSRFToken"] = csrf
+                    cookies["tt_csrf_token"] = csrf
         except Exception:
             pass
 
-    return {"ok": False, "username": "", "nickname": "", "avatar": "", "fans": 0}
+        # ── Step 2: probe edit endpoint ─────────────────────
+        # Use a probe name that is very likely taken (so we get a "taken" response
+        # from a valid session, rather than accidentally changing the username)
+        probe = "tiktok"   # definitely taken
+        try:
+            async with sess.post(
+                "https://www.tiktok.com/api/commit/user/edit/",
+                data=f"uniqueId={probe}",
+                headers=hdrs,
+                timeout=aiohttp.ClientTimeout(total=12)
+            ) as r:
+                data     = await r.json(content_type=None)
+                code     = data.get("status_code", -1)
+                msg      = data.get("status_msg", "")
+
+                if (code in SESSION_VALID_CODES) and msg != URL_MISMATCH:
+                    # Session is valid — we can't get username from web API easily,
+                    # but we know the session works.
+                    return {
+                        "ok":       True,
+                        "username": "●●●●●",    # TikTok doesn't expose via probe
+                        "nickname": "حساب نشط ✓",
+                        "avatar":   "",
+                        "fans":     0,
+                        "probe_code": code,
+                        "session_confirmed": True,
+                    }
+
+                if code in SESSION_INVALID_CODES or msg == URL_MISMATCH:
+                    return {"ok": False, "username": "", "nickname": "",
+                            "avatar": "", "fans": 0,
+                            "error": f"session_invalid (code={code})"}
+
+        except Exception as e:
+            return {"ok": False, "username": "", "nickname": "", "avatar": "", "fans": 0,
+                    "error": str(e)[:80]}
+
+        # ── Fallback: try recommend endpoint ────────────────
+        try:
+            async with sess.get(
+                "https://www.tiktok.com/api/recommend/user/self/?aid=1988",
+                headers={**hdrs, "Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as r:
+                data = await r.json(content_type=None)
+                user = data.get("user") or data.get("userInfo", {}).get("user", {})
+                if user and user.get("uniqueId"):
+                    return {
+                        "ok": True,
+                        "username": user["uniqueId"],
+                        "nickname": user.get("nickname", user["uniqueId"]),
+                        "avatar":   (user.get("avatarMedium") or user.get("avatarThumb") or "").replace("\\u002F", "/"),
+                        "fans":     user.get("followerCount", 0),
+                    }
+        except Exception:
+            pass
+
+    return {"ok": False, "username": "", "nickname": "", "avatar": "", "fans": 0,
+            "error": "unknown"}
 
 
 # ── AutoClaim Hunter ──────────────────────────────────────
