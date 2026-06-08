@@ -1,6 +1,6 @@
 import eventlet
 eventlet.monkey_patch()
-import asyncio, random, string, os, threading
+import asyncio, random, string, os, threading, re
 import requests, aiohttp
 from typing import List, Optional
 from collections import deque
@@ -34,6 +34,17 @@ _account_ms_token = ""
 _captcha_key      = ""
 _auto_claim       = False
 _claim_uncertain  = False
+
+# ── Account info (set after verify) ─────────────────────
+_account_info: dict = {}   # {ok, username, nickname, avatar, fans}
+
+# ── AutoClaim Hunter state ───────────────────────────────
+_hunter_running   = False
+_hunter_stop      = threading.Event()
+_hunter_lengths: List[int] = [3]
+_hunter_prefix    = ""
+_hunter_claimed: List[str] = []
+_hunter_lock      = threading.Lock()
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -934,6 +945,241 @@ def on_test_2captcha(data):
 def on_connect_claimer():
     socketio.emit('account_status', {"ok": bool(_account_session), "ms_token": bool(_account_ms_token)})
     socketio.emit('captcha_status', {"ok": bool(_captcha_key)})
+    if _account_info:
+        socketio.emit('account_info', _account_info)
+    socketio.emit('hunter_status', {
+        "running": _hunter_running,
+        "claimed": len(_hunter_claimed),
+    })
+
+
+# ── Account Verification ─────────────────────────────────
+async def verify_account_session(session_id: str, ms_token: str = "") -> dict:
+    cookies = {"sessionid": session_id}
+    if ms_token: cookies["msToken"] = ms_token
+    hdrs = {
+        "User-Agent": USER_AGENTS[0],
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.tiktok.com/",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    connector = aiohttp.TCPConnector(ssl=False)
+    async with aiohttp.ClientSession(connector=connector, cookies=cookies) as sess:
+        # Method 1: recommend/user/self
+        try:
+            async with sess.get(
+                "https://www.tiktok.com/api/recommend/user/self/",
+                headers=hdrs, timeout=aiohttp.ClientTimeout(total=12)
+            ) as r:
+                if r.status == 200:
+                    data = await r.json(content_type=None)
+                    user = data.get("user") or data.get("userInfo", {}).get("user", {})
+                    if user and user.get("uniqueId"):
+                        return {
+                            "ok": True,
+                            "username": user["uniqueId"],
+                            "nickname": user.get("nickname", user["uniqueId"]),
+                            "avatar":  (user.get("avatarMedium") or user.get("avatarThumb") or "").replace("\\u002F", "/"),
+                            "fans":    user.get("followerCount", 0),
+                        }
+        except Exception:
+            pass
+
+        # Method 2: parse main page HTML
+        try:
+            async with sess.get(
+                "https://www.tiktok.com/",
+                headers={**hdrs, "Accept": "text/html,*/*"},
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as r:
+                if r.status == 200:
+                    html = await r.text()
+                    m = re.search(r'"uniqueId":"([a-zA-Z0-9._]{1,30})"', html)
+                    if m:
+                        uid = m.group(1)
+                        av  = re.search(r'"avatarThumb":"([^"]+)"', html)
+                        avatar = av.group(1).replace("\\u002F", "/") if av else ""
+                        return {"ok": True, "username": uid, "nickname": uid,
+                                "avatar": avatar, "fans": 0}
+        except Exception:
+            pass
+
+    return {"ok": False, "username": "", "nickname": "", "avatar": "", "fans": 0}
+
+
+# ── AutoClaim Hunter ──────────────────────────────────────
+class AutoClaimHunter:
+    """
+    Generates random usernames of target lengths and claims the first
+    available one as fast as possible (sub-20 ms reaction after verify).
+    """
+    CONCURRENCY = 14
+    BATCH       = 40
+    DELAY_MIN   = 0.020   # 20 ms
+    DELAY_MAX   = 0.080   # 80 ms
+
+    def __init__(self, lengths: List[int], prefix: str = ""):
+        self.lengths = lengths
+        self.prefix  = prefix
+        self.sem     = asyncio.Semaphore(self.CONCURRENCY)
+        self.checked = 0
+        self.claimed = 0
+
+    def _gen(self) -> str:
+        chars    = string.ascii_lowercase + string.digits
+        tgt      = random.choice(self.lengths)
+        rnd_len  = max(1, tgt - len(self.prefix))
+        return self.prefix + "".join(random.choice(chars) for _ in range(rnd_len))
+
+    async def _hunt(self, username: str):
+        global _hunter_stop
+        if _hunter_stop.is_set(): return
+        async with self.sem:
+            if _hunter_stop.is_set(): return
+            await asyncio.sleep(random.uniform(self.DELAY_MIN, self.DELAY_MAX))
+            proxy = get_next_proxy()
+            conn  = aiohttp.TCPConnector(ssl=False) if proxy else None
+            try:
+                # ── Signal 1: user-detail (fast) ──
+                async with aiohttp.ClientSession(connector=conn) as s:
+                    sig = await _sig_userdetail(s, username, proxy)
+
+                with _hunter_lock:
+                    self.checked += 1
+
+                socketio.emit('hunter_tick', {
+                    "checked": self.checked, "claimed": self.claimed
+                })
+
+                if sig == "available":
+                    # ── Signal 2: oEmbed confirmation ──
+                    conn2 = aiohttp.TCPConnector(ssl=False) if proxy else None
+                    async with aiohttp.ClientSession(connector=conn2) as s2:
+                        sig2 = await _sig_oembed(s2, username, proxy)
+
+                    if sig2 not in ("taken", "banned"):
+                        _log(f"[HUNTER 🎯]  @{username}  len={len(username)}  — claim فوري…", "hit")
+                        socketio.emit('autoclaim_found', {"username": username})
+
+                        _hunter_stop.set()   # pause other goroutines during claim
+
+                        claimer = Claimer(_account_session, _captcha_key, _account_ms_token)
+                        result  = await claimer.claim(username, get_next_proxy())
+
+                        if result["ok"]:
+                            with _hunter_lock:
+                                self.claimed += 1
+                                _hunter_claimed.append(username)
+                            with _lock:
+                                _hits.append(username)
+                                _stats["available"] += 1
+                            _log(f"[HUNTER 🎉]  @{username}  — تم بنجاح! استمرار الصيد…", "hit")
+                            socketio.emit('autoclaim_claimed', {
+                                "username": username, "ok": True,
+                                "checked": self.checked, "claimed": self.claimed,
+                            })
+                            _emit_state()
+                            _hunter_stop.clear()   # keep hunting
+                        else:
+                            reason_map = {
+                                "no_session": "لا يوجد session",
+                                "pre_check_taken": "أصبح مأخوذاً للحظة الأخيرة",
+                                "taken": "مأخوذ",
+                                "session_invalid": "جلسة منتهية — حدّث الكوكيز",
+                                "cooldown_30d": "cooldown 30 يوم",
+                                "rate_limit": "ريت ليمت",
+                                "timeout": "timeout",
+                                "captcha": "كابتشا",
+                            }
+                            reason_ar = reason_map.get(result.get("reason", ""), result.get("reason", "?"))
+                            _log(f"[HUNTER ✗]  @{username}  — {reason_ar}  استمرار…", "err")
+                            socketio.emit('autoclaim_claimed', {
+                                "username": username, "ok": False, "reason": reason_ar
+                            })
+                            _hunter_stop.clear()   # resume hunting
+            except Exception:
+                pass
+
+    async def run(self):
+        while not _hunter_stop.is_set():
+            batch = [self._gen() for _ in range(self.BATCH)]
+            await asyncio.gather(*[self._hunt(u) for u in batch])
+            if not _hunter_stop.is_set():
+                await asyncio.sleep(0.01)
+
+
+def _run_hunter():
+    global _hunter_running, _hunter_stop, _hunter_claimed
+    _hunter_stop.clear()
+    with _hunter_lock:
+        _hunter_claimed.clear()
+    _hunter_running = True
+    socketio.emit('hunter_status', {"running": True, "claimed": 0})
+    _log(f"[HUNTER]  🚀 صيد يوزرات  lengths={_hunter_lengths}  prefix='{_hunter_prefix}'  CONCURRENCY={AutoClaimHunter.CONCURRENCY}", "hit")
+
+    def run():
+        global _hunter_running
+        hunter = AutoClaimHunter(_hunter_lengths, _hunter_prefix)
+        asyncio.run(hunter.run())
+        _hunter_running = False
+        socketio.emit('hunter_status', {
+            "running": False, "claimed": len(_hunter_claimed)
+        })
+        _log(f"[HUNTER]  توقّف — تم claim {len(_hunter_claimed)} يوزر  •  فحص {hunter.checked}", "warn")
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+# ── Hunter SocketIO events ────────────────────────────────
+@socketio.on('verify_account')
+def on_verify_account(data):
+    global _account_info
+    sid = data.get('session_id', '').strip()
+    ms  = data.get('ms_token', '').strip()
+    if not sid:
+        socketio.emit('account_info', {"ok": False, "error": "session_id فارغ"})
+        return
+    _log("[ACCOUNT]  جاري التحقق من الحساب…", "info")
+
+    def run():
+        global _account_info
+        info = asyncio.run(verify_account_session(sid, ms))
+        _account_info = info
+        if info["ok"]:
+            _log(f"[ACCOUNT ✅]  @{info['username']}  —  {info.get('fans',0):,} متابع", "hit")
+        else:
+            _log("[ACCOUNT ✗]  فشل التحقق — تحقق من صحة الـ sessionid", "err")
+        socketio.emit('account_info', info)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+@socketio.on('start_hunter')
+def on_start_hunter(data):
+    global _hunter_lengths, _hunter_prefix, _hunter_running
+    if _hunter_running:
+        _log("[HUNTER]  الصيد شغّال بالفعل", "warn"); return
+    if not _account_session:
+        _log("[HUNTER ✗]  أضف وفعّل الحساب أولاً", "err"); return
+
+    lengths_raw = data.get('lengths', '3')
+    prefix_raw  = data.get('prefix', '')
+    _hunter_lengths = parse_lengths(lengths_raw)
+    _hunter_prefix  = str(prefix_raw).strip()[:10]
+
+    if not _hunter_lengths:
+        _log("[HUNTER ✗]  lengths غير صحيح", "err"); return
+
+    _run_hunter()
+
+
+@socketio.on('stop_hunter')
+def on_stop_hunter():
+    global _hunter_running
+    _hunter_stop.set()
+    _hunter_running = False
+    _log("[HUNTER]  ⏹  إيقاف الصيد", "warn")
+    socketio.emit('hunter_status', {"running": False, "claimed": len(_hunter_claimed)})
 
 
 if __name__ == '__main__':

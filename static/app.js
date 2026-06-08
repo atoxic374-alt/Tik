@@ -146,6 +146,65 @@ socket.on('captcha_status', ({ ok }) => {
   const dot = document.getElementById('cap-dot');
   if (dot) dot.className = 'status-dot ' + (ok ? 'ok' : 'err');
 });
+
+// Account verification result
+socket.on('account_info', info => {
+  const card = document.getElementById('acct-card');
+  const dot  = document.getElementById('acct-dot');
+  const vbtn = document.getElementById('verify-btn');
+  if (vbtn) { vbtn.disabled = false; vbtn.textContent = 'Verify'; }
+  if (!card) return;
+  if (info.ok) {
+    const av = document.getElementById('acct-avatar');
+    const un = document.getElementById('acct-username');
+    const nn = document.getElementById('acct-nickname');
+    const fn = document.getElementById('acct-fans');
+    if (av) { av.src = info.avatar || ''; av.onerror = () => { av.style.display='none'; }; }
+    if (un) un.textContent = '@' + (info.username || '');
+    if (nn) nn.textContent = info.nickname || '';
+    if (fn) fn.textContent = info.fans ? `${Number(info.fans).toLocaleString()} متابع` : '';
+    card.style.display = 'flex';
+    if (dot) dot.className = 'status-dot ok';
+  } else {
+    card.style.display = 'none';
+    if (dot) dot.className = 'status-dot err';
+  }
+});
+
+// Hunter events
+socket.on('hunter_status', ({ running, claimed }) => {
+  const startBtn = document.getElementById('hunter-start-btn');
+  const stopBtn  = document.getElementById('hunter-stop-btn');
+  const statRow  = document.getElementById('hunter-stat-row');
+  if (startBtn) startBtn.style.display = running ? 'none' : '';
+  if (stopBtn)  stopBtn.style.display  = running ? '' : 'none';
+  if (statRow)  statRow.style.display  = (running || claimed > 0) ? 'flex' : 'none';
+  const hc = document.getElementById('h-claimed');
+  if (hc) hc.textContent = claimed;
+});
+
+socket.on('hunter_tick', ({ checked, claimed }) => {
+  const hchk = document.getElementById('h-checked');
+  const hclm = document.getElementById('h-claimed');
+  if (hchk) hchk.textContent = checked;
+  if (hclm) hclm.textContent = claimed;
+});
+
+socket.on('autoclaim_found', ({ username }) => {
+  appendLog(`[🎯 FOUND]  @${username}  — claim فوري…`, 'hit');
+});
+
+socket.on('autoclaim_claimed', ({ username, ok, reason, checked, claimed }) => {
+  if (ok) {
+    appendLog(`[🎉 CLAIMED]  @${username}  — تم بنجاح! استمرار الصيد…`, 'hit');
+    const hclm = document.getElementById('h-claimed');
+    if (hclm && claimed !== undefined) hclm.textContent = claimed;
+    // Add to hits panel
+    renderHunterHit(username);
+  } else {
+    appendLog(`[✗ FAIL]  @${username}  — ${reason || 'فشل'}`, 'err');
+  }
+});
 socket.on('captcha_test_result', ({ ok, msg }) => {
   const el = document.getElementById('cap-bal');
   if (el) { el.textContent = msg; el.style.color = ok ? 'var(--green)' : 'var(--red)'; }
@@ -332,6 +391,50 @@ function toggleAutoClaim() {
     enabled:   document.getElementById('auto-claim-chk').checked,
     uncertain: document.getElementById('uncertain-chk').checked,
   });
+}
+
+// ── Verify Account ──────────────────────────────────────
+function verifyAccount() {
+  const sid = document.getElementById('cfg-session').value.trim();
+  const ms  = document.getElementById('cfg-mstoken').value.trim();
+  if (!sid) { appendLog('[VERIFY]  أدخل sessionid أولاً', 'err'); return; }
+  const vbtn = document.getElementById('verify-btn');
+  if (vbtn) { vbtn.disabled = true; vbtn.textContent = '...'; }
+  setAccount();   // also save the session
+  socket.emit('verify_account', { session_id: sid, ms_token: ms });
+}
+
+// ── Hunter Controls ─────────────────────────────────────
+function startHunter() {
+  const lengths = document.getElementById('hunter-lengths').value.trim() || '3';
+  const prefix  = document.getElementById('cfg-prefix') ? document.getElementById('cfg-prefix').value.trim() : '';
+  // Reset counters
+  const hchk = document.getElementById('h-checked');
+  const hclm = document.getElementById('h-claimed');
+  if (hchk) hchk.textContent = '0';
+  if (hclm) hclm.textContent = '0';
+  const statRow = document.getElementById('hunter-stat-row');
+  if (statRow) statRow.style.display = 'flex';
+  socket.emit('start_hunter', { lengths, prefix });
+}
+
+function stopHunter() {
+  socket.emit('stop_hunter');
+}
+
+function renderHunterHit(username) {
+  const wrap = document.getElementById('hits-wrap');
+  if (!wrap) return;
+  const div = document.createElement('div');
+  div.className = 'hit-item hunter-hit';
+  div.innerHTML =
+    `<span class="hit-num hunter-num">🎯</span>` +
+    `<span class="hit-name">@${username}</span><br>` +
+    `<button id="claim-${username}" class="claim-btn claim-btn-ok" disabled>✓ تم الـ claim!</button>` +
+    `<span class="hit-link">  tiktok.com/@${username}</span>`;
+  wrap.insertBefore(div, wrap.firstChild);
+  const cnt = document.getElementById('hits-count');
+  if (cnt) cnt.textContent = parseInt(cnt.textContent || '0') + 1;
 }
 function test2captcha() {
   const key = document.getElementById('cfg-captcha').value.trim();

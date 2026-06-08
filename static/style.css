@@ -372,6 +372,11 @@ input[type="number"].si-input { width: 100%; }
   border-color: rgba(0,229,255,0.25);
 }
 .sec-btn-accent:hover { background: rgba(0,229,255,0.14); border-color: var(--accent); }
+.sec-btn-green {
+  background: rgba(0,255,179,0.07); color: var(--green);
+  border-color: rgba(0,255,179,0.25);
+}
+.sec-btn-green:hover { background: rgba(0,255,179,0.15); border-color: var(--green); }
 
 .apply-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -432,6 +437,80 @@ input[type="number"].si-input { width: 100%; }
 }
 .status-dot.ok  { background: var(--green); opacity: 1; box-shadow: 0 0 6px rgba(0,255,179,0.5); }
 .status-dot.err { background: var(--red);   opacity: 1; }
+
+/* ── Account card ── */
+.acct-card {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 10px; padding: 9px 11px; border-radius: 8px;
+  background: rgba(0,255,179,0.05);
+  border: 1px solid rgba(0,255,179,0.2);
+  position: relative;
+}
+.acct-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+  border: 1.5px solid rgba(0,255,179,0.3);
+  background: var(--glass3);
+}
+.acct-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.acct-username {
+  font-family: var(--mono); font-size: 12px;
+  font-weight: 700; color: var(--green);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.acct-nickname {
+  font-size: 10px; color: var(--text); opacity: 0.7;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.acct-fans { font-size: 9.5px; color: var(--subtext); margin-top: 1px; }
+.acct-check {
+  position: absolute; top: 7px; right: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Hunter section ── */
+.hunter-sep {
+  height: 1px; background: var(--border); margin: 12px 0 10px;
+}
+.hunter-hdr {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+}
+.hunter-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 1px;
+  color: var(--red); flex: 1;
+}
+.badge-new {
+  font-size: 8.5px; font-weight: 900; letter-spacing: 0.5px;
+  padding: 1px 5px; border-radius: 3px;
+  background: rgba(255,64,96,0.15); color: var(--red);
+  border: 1px solid rgba(255,64,96,0.3);
+}
+.hunter-desc {
+  font-size: 10px; color: var(--subtext); line-height: 1.4;
+}
+.hunter-stat-row {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0; margin-top: 10px;
+  background: var(--glass3); border: 1px solid var(--border);
+  border-radius: 7px; overflow: hidden;
+}
+.hunter-stat-item {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; padding: 8px 6px; gap: 2px;
+}
+.hunter-stat-val {
+  font-family: var(--mono); font-size: 16px; font-weight: 700;
+  color: var(--text); line-height: 1;
+  transition: color 0.2s;
+}
+.hunter-stat-val.green { color: var(--green); }
+.hunter-stat-lbl {
+  font-size: 9px; font-weight: 600; letter-spacing: 0.5px;
+  color: var(--subtext); text-transform: uppercase;
+}
+.hunter-stat-sep { width: 1px; height: 34px; background: var(--border); }
+.hunter-hit { border-left: 2px solid var(--red) !important; }
+.hunter-num { color: var(--red); }
 
 /* ═══════════════════════════════════════════
    LOG SECTION (CENTER)
