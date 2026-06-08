@@ -6,244 +6,485 @@
   <title>◈ LAKE • Username Tool</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <canvas id="particles"></canvas>
 
-  <!-- ── TOP BAR ── -->
-  <header class="topbar">
+  <!-- ═══════════════════════ HEADER ═══════════════════════ -->
+  <header class="header">
     <div class="logo">
-      <span class="logo-icon">◈</span>
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <path d="M9 1L16.5 5V13L9 17L1.5 13V5L9 1Z" stroke="var(--accent)" stroke-width="1.5" fill="none"/>
+        <circle cx="9" cy="9" r="2.5" fill="var(--accent)" opacity="0.8"/>
+      </svg>
       <span class="logo-name">LAKE</span>
-      <span class="logo-sub">· USERNAME TOOL</span>
+      <span class="logo-sep">·</span>
+      <span class="logo-sub">USERNAME TOOL</span>
     </div>
-    <div class="pill" id="pill"><span class="pill-dot">◉</span> IDLE</div>
-    <div class="ip-box" id="ip-box">
-      <span class="ip-label">IP</span>
-      <span class="ip-value" id="current-ip">—</span>
+
+    <div class="header-meta">
+      <div class="pill" id="pill">
+        <span class="pill-dot" id="pill-dot"></span>
+        <span id="pill-txt">IDLE</span>
+      </div>
+      <div class="ip-badge" id="ip-box">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <circle cx="5" cy="5" r="4" stroke="var(--accent)" stroke-width="1" opacity="0.6"/>
+          <path d="M5 1C5 1 7 3.5 7 5C7 6.5 5 9 5 9M5 1C5 1 3 3.5 3 5C3 6.5 5 9 5 9M1.5 3.5H8.5M1.5 6.5H8.5" stroke="var(--accent)" stroke-width="0.8" opacity="0.6"/>
+        </svg>
+        <span id="current-ip">—</span>
+      </div>
+      <div class="clock-badge" id="clock"></div>
     </div>
-    <div class="clock" id="clock"></div>
-    <div class="topbar-btns">
-      <button class="btn btn-yellow" onclick="testRun()">⚡ TEST 10</button>
-      <button class="btn btn-green"  onclick="startCheck()">▶ START</button>
-      <button class="btn btn-red"    onclick="stopCheck()">■ STOP</button>
+
+    <div class="header-actions">
+      <button class="hbtn hbtn-yellow" onclick="testRun()">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+          <path d="M7 1L2 7.5H6.5L5.5 12L11 5.5H6.5L7 1Z" fill="var(--yellow)" stroke="var(--yellow)" stroke-width="0.5" stroke-linejoin="round"/>
+        </svg>
+        TEST 10
+      </button>
+      <button class="hbtn hbtn-green" onclick="startCheck()">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M3 2L10 6L3 10V2Z" fill="var(--green)"/>
+        </svg>
+        START
+      </button>
+      <button class="hbtn hbtn-red" onclick="stopCheck()">
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+          <rect x="2" y="2" width="7" height="7" rx="1" fill="var(--red)"/>
+        </svg>
+        STOP
+      </button>
     </div>
   </header>
 
-  <!-- ── TOP GLOW LINE ── -->
+  <!-- gradient line -->
   <div class="topline"></div>
-
-  <!-- ── CONFIG STRIP ── -->
-  <div class="config-strip">
-    <div class="cfg-block">
-      <span class="cfg-label">MODE</span>
-      <div class="cfg-widget">
-        <label class="radio-lbl"><input type="radio" name="mode" value="generate" checked> Generate</label>
-        <label class="radio-lbl"><input type="radio" name="mode" value="file"> Load File</label>
-      </div>
-    </div>
-    <div class="vsep"></div>
-    <div class="cfg-block">
-      <span class="cfg-label">AMOUNT</span>
-      <div class="cfg-widget"><input class="cfg-input" id="cfg-amount" type="number" value="20" min="1" max="9999"></div>
-    </div>
-    <div class="vsep"></div>
-    <div class="cfg-block">
-      <span class="cfg-label">LENGTH</span>
-      <div class="cfg-widget"><input class="cfg-input" id="cfg-length" type="number" value="5" min="1" max="24"></div>
-    </div>
-    <div class="vsep"></div>
-    <div class="cfg-block">
-      <span class="cfg-label">PROXIES</span>
-      <div class="cfg-widget">
-        <button class="cfg-btn" onclick="loadProxies()">⟳ Load proxies.txt</button>
-        <span class="proxy-badge" id="proxy-badge">0 loaded</span>
-        <button class="cfg-btn-sm" onclick="openProxyModal()">🔍 Test</button>
-        <label class="check-lbl">
-          <input type="checkbox" id="rotating-check" onchange="toggleRotating()">
-          <span>Rotating</span>
-        </label>
-      </div>
-    </div>
-    <div class="vsep"></div>
-    <div class="cfg-block cfg-grow">
-      <span class="cfg-label">WEBHOOK</span>
-      <div class="cfg-widget">
-        <input class="cfg-input cfg-wide" id="cfg-webhook" type="text" placeholder="Discord Webhook URL (اختياري)">
-      </div>
-    </div>
-  </div>
-
-  <!-- ── CONFIG STRIP 2 — CLAIMER ── -->
-  <div class="config-strip config-strip-claimer">
-    <div class="cfg-block">
-      <span class="cfg-label">
-        ACCOUNT &nbsp;<span class="status-dot" id="acct-dot" title="جلسة غير مضبوطة">●</span>
-      </span>
-      <div class="cfg-widget" style="flex-wrap:wrap;gap:6px">
-        <input class="cfg-input" id="cfg-session" type="password"
-               placeholder="sessionid cookie" style="width:200px"
-               oninput="accountDirty()">
-        <input class="cfg-input" id="cfg-mstoken" type="password"
-               placeholder="msToken (اختياري)" style="width:175px"
-               oninput="accountDirty()" title="يقلّل أخطاء الـ claim — اختياري">
-        <button class="cfg-btn" onclick="setAccount()">✓ تطبيق</button>
-        <span class="cfg-hint" onclick="toggleHint('hint-session')" title="كيف أحصل عليهم؟">?</span>
-      </div>
-    </div>
-    <div class="vsep"></div>
-    <div class="cfg-block">
-      <span class="cfg-label">
-        2CAPTCHA &nbsp;<span class="status-dot" id="cap-dot" title="API key غير مضبوط">●</span>
-      </span>
-      <div class="cfg-widget">
-        <input class="cfg-input" id="cfg-captcha" type="password"
-               placeholder="API key" style="width:170px"
-               oninput="captchaDirty()">
-        <button class="cfg-btn" onclick="setCaptchaKey()">✓ تطبيق</button>
-        <button class="cfg-btn-sm" onclick="test2captcha()">💰 رصيد</button>
-        <span class="cap-bal" id="cap-bal"></span>
-      </div>
-    </div>
-    <div class="vsep"></div>
-    <div class="cfg-block">
-      <span class="cfg-label">AUTO-CLAIM</span>
-      <div class="cfg-widget">
-        <label class="check-lbl">
-          <input type="checkbox" id="auto-claim-chk" onchange="toggleAutoClaim()">
-          <span>بعد الفحص الدقيق</span>
-        </label>
-        <label class="check-lbl">
-          <input type="checkbox" id="uncertain-chk" onchange="toggleAutoClaim()">
-          <span>+ غير المؤكدة</span>
-        </label>
-      </div>
-    </div>
-    <div class="vsep"></div>
-    <div class="cfg-block cfg-grow">
-      <span class="cfg-label">⚠ المشاكل المعروفة</span>
-      <div class="cfg-widget issues-row">
-        <span class="issue-badge r">30y cooldown</span>
-        <span class="issue-badge y">Rate-limit / IP</span>
-        <span class="issue-badge p">CAPTCHA</span>
-        <span class="issue-badge s">Session expiry</span>
-        <span class="issue-badge s">Device tokens</span>
-      </div>
-    </div>
-  </div>
-  <!-- Session-cookie hint -->
-  <div class="hint-box" id="hint-session" style="display:none">
-    <strong>كيف تحصل على sessionid (مطلوب):</strong><br>
-    1. افتح <b>www.tiktok.com</b> وسجّل دخولك<br>
-    2. اضغط F12 ← Application ← Cookies ← www.tiktok.com<br>
-    3. ابحث عن <code>sessionid</code> وانسخ قيمته<br>
-    4. الصقه في الحقل الأول واضغط ✓ تطبيق<br><br>
-    <strong>كيف تحصل على msToken (اختياري — يقلّل أخطاء الـ claim):</strong><br>
-    1. في نفس صفحة الكوكيز، ابحث عن <code>msToken</code><br>
-    2. انسخ قيمته والصقه في الحقل الثاني<br>
-    3. يساعد في تقليل أخطاء "جرب اسم مستخدم آخر" و CAPTCHA<br><br>
-    <strong>ملاحظة:</strong> إذا انتهت الجلسة، أعد تسجيل الدخول وحدّث الكوكيز
-  </div>
-
-  <!-- ── PROGRESS BAR ── -->
+  <!-- progress -->
   <div class="progress-track">
     <div class="progress-fill" id="progress-fill"></div>
     <div class="progress-shimmer" id="progress-shimmer"></div>
   </div>
 
-  <!-- ── MAIN CONTENT ── -->
-  <main class="content">
-    <!-- Left: Log -->
-    <section class="panel log-panel">
+  <!-- ═══════════════════════ BODY ═══════════════════════ -->
+  <div class="body-layout">
+
+    <!-- ══════════ LEFT SIDEBAR ══════════ -->
+    <aside class="sidebar">
+
+      <!-- ▸ CHECKER -->
+      <div class="section">
+        <div class="section-hdr">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="var(--accent)" stroke-width="1.2"/>
+            <circle cx="7" cy="7" r="2" fill="var(--accent)" opacity="0.7"/>
+            <line x1="7" y1="1" x2="7" y2="0" stroke="var(--accent)" stroke-width="1.5"/>
+            <line x1="7" y1="14" x2="7" y2="13" stroke="var(--accent)" stroke-width="1.5"/>
+            <line x1="1" y1="7" x2="0" y2="7" stroke="var(--accent)" stroke-width="1.5"/>
+            <line x1="14" y1="7" x2="13" y2="7" stroke="var(--accent)" stroke-width="1.5"/>
+          </svg>
+          <span class="section-title">CHECKER</span>
+        </div>
+        <div class="section-body">
+
+          <!-- Mode -->
+          <div class="field-group">
+            <div class="field-label">MODE</div>
+            <div class="radio-row">
+              <label class="radio-opt">
+                <input type="radio" name="mode" value="generate" checked>
+                <span class="radio-box"></span>
+                <span>Generate</span>
+              </label>
+              <label class="radio-opt">
+                <input type="radio" name="mode" value="file">
+                <span class="radio-box"></span>
+                <span>Load File</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Amount -->
+          <div class="field-group">
+            <div class="field-label">AMOUNT <span class="field-hint">عدد اليوزرات</span></div>
+            <input class="si-input" id="cfg-amount" type="number" value="20" min="1" max="9999" placeholder="20">
+          </div>
+
+          <!-- Lengths -->
+          <div class="field-group">
+            <div class="field-label-row">
+              <span class="field-label">LENGTHS</span>
+              <button class="qbtn" onclick="showHelp('lengths')" title="أمثلة">?</button>
+            </div>
+            <input class="si-input" id="cfg-length" type="text" value="5" placeholder="5  أو  3-6  أو  3,4,5">
+            <div class="field-hint-below">مثال: <code>5</code> أو <code>3-6</code> أو <code>3,4,5</code></div>
+          </div>
+
+          <!-- Prefix -->
+          <div class="field-group">
+            <div class="field-label-row">
+              <span class="field-label">PREFIX <span class="badge-opt">اختياري</span></span>
+              <button class="qbtn" onclick="showHelp('prefix')" title="ما هو البادئ؟">?</button>
+            </div>
+            <input class="si-input" id="cfg-prefix" type="text" placeholder="مثال: a  أو  sw  أو  _x" maxlength="12">
+            <div class="field-hint-below">يُضاف قبل كل اسم مُنتَج</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ▸ PROXIES -->
+      <div class="section">
+        <div class="section-hdr">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="1" y="4" width="4" height="3" rx="1" stroke="var(--purple)" stroke-width="1.2"/>
+            <rect x="9" y="4" width="4" height="3" rx="1" stroke="var(--purple)" stroke-width="1.2"/>
+            <rect x="5" y="8" width="4" height="3" rx="1" stroke="var(--purple)" stroke-width="1.2"/>
+            <line x1="5" y1="5.5" x2="5" y2="5.5" stroke="var(--purple)" stroke-width="1.2"/>
+            <path d="M3 7V9.5H7" stroke="var(--purple)" stroke-width="1.2" stroke-linecap="round"/>
+            <path d="M11 7V9.5H9" stroke="var(--purple)" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          <span class="section-title">PROXIES</span>
+          <span class="proxy-badge" id="proxy-badge">0 loaded</span>
+        </div>
+        <div class="section-body">
+          <div class="btn-pair">
+            <button class="sec-btn sec-btn-purple" onclick="loadProxies()">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <path d="M5.5 1V8M2.5 5.5L5.5 8.5L8.5 5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                <line x1="1" y1="10" x2="10" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+              Load proxies.txt
+            </button>
+            <button class="sec-btn sec-btn-accent" onclick="openProxyModal()">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.2"/>
+                <line x1="8" y1="8" x2="10" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+              Test
+            </button>
+          </div>
+          <label class="check-opt">
+            <input type="checkbox" id="rotating-check" onchange="toggleRotating()">
+            <span class="check-box"></span>
+            <span>Rotating proxy</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- ▸ WEBHOOK -->
+      <div class="section">
+        <div class="section-hdr">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M7 1C4.5 1 2.5 3 2.5 5.5C2.5 7.5 3.7 9.2 5.5 9.8L4.5 13H9.5L8.5 9.8C10.3 9.2 11.5 7.5 11.5 5.5C11.5 3 9.5 1 7 1Z" stroke="var(--yellow)" stroke-width="1.2" fill="none"/>
+            <line x1="7" y1="1" x2="7" y2="0.5" stroke="var(--yellow)" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span class="section-title">DISCORD WEBHOOK</span>
+          <button class="qbtn" onclick="showHelp('webhook')">?</button>
+        </div>
+        <div class="section-body">
+          <input class="si-input" id="cfg-webhook" type="text" placeholder="https://discord.com/api/webhooks/...">
+        </div>
+      </div>
+
+      <!-- ▸ ACCOUNT -->
+      <div class="section section-account">
+        <div class="section-hdr">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="5" r="2.5" stroke="var(--green)" stroke-width="1.2"/>
+            <path d="M2 13C2 10.5 4.2 8.5 7 8.5C9.8 8.5 12 10.5 12 13" stroke="var(--green)" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          <span class="section-title">ACCOUNT</span>
+          <span class="status-dot" id="acct-dot" title="غير مضبوط"></span>
+          <button class="qbtn" onclick="showHelp('account')">?</button>
+        </div>
+        <div class="section-body">
+          <div class="field-group">
+            <div class="field-label">SESSION ID <span class="badge-req">مطلوب</span></div>
+            <input class="si-input" id="cfg-session" type="password" placeholder="sessionid cookie من TikTok" oninput="accountDirty()">
+          </div>
+          <div class="field-group">
+            <div class="field-label">MS TOKEN <span class="badge-opt">اختياري</span></div>
+            <input class="si-input" id="cfg-mstoken" type="password" placeholder="يقلّل أخطاء الـ claim" oninput="accountDirty()">
+          </div>
+          <button class="apply-btn" onclick="setAccount()">
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+              <path d="M2 5.5L4.5 8L9 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Apply Account
+          </button>
+        </div>
+      </div>
+
+      <!-- ▸ 2CAPTCHA -->
+      <div class="section">
+        <div class="section-hdr">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M7 1L12.5 3.5V8C12.5 10.5 10 12.5 7 13C4 12.5 1.5 10.5 1.5 8V3.5L7 1Z" stroke="var(--red)" stroke-width="1.2" fill="none"/>
+            <path d="M5 7C5 5.9 5.9 5 7 5C8.1 5 9 5.9 9 7" stroke="var(--red)" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="7" cy="8.5" r="0.7" fill="var(--red)"/>
+          </svg>
+          <span class="section-title">2CAPTCHA</span>
+          <span class="status-dot" id="cap-dot" title="API key غير مضبوط"></span>
+          <button class="qbtn" onclick="showHelp('captcha')">?</button>
+        </div>
+        <div class="section-body">
+          <div class="field-group">
+            <div class="field-label">API KEY</div>
+            <input class="si-input" id="cfg-captcha" type="password" placeholder="مفتاح 2captcha.com" oninput="captchaDirty()">
+          </div>
+          <div class="btn-pair">
+            <button class="apply-btn" onclick="setCaptchaKey()">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <path d="M2 5.5L4.5 8L9 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Apply
+            </button>
+            <button class="sec-btn sec-btn-accent" onclick="test2captcha()">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.2"/>
+                <line x1="5.5" y1="3" x2="5.5" y2="5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                <circle cx="5.5" cy="7.5" r="0.6" fill="currentColor"/>
+              </svg>
+              Balance
+            </button>
+          </div>
+          <span class="cap-bal" id="cap-bal"></span>
+        </div>
+      </div>
+
+      <!-- ▸ AUTO-CLAIM -->
+      <div class="section">
+        <div class="section-hdr">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M8 1.5L3.5 7.5H7L6.5 12.5L11 6.5H7.5L8 1.5Z" fill="var(--yellow)" stroke="var(--yellow)" stroke-width="0.5" stroke-linejoin="round"/>
+          </svg>
+          <span class="section-title">AUTO-CLAIM</span>
+        </div>
+        <div class="section-body">
+          <label class="check-opt">
+            <input type="checkbox" id="auto-claim-chk" onchange="toggleAutoClaim()">
+            <span class="check-box"></span>
+            <span>بعد الفحص الدقيق تلقائياً</span>
+          </label>
+          <label class="check-opt" style="margin-top:6px">
+            <input type="checkbox" id="uncertain-chk" onchange="toggleAutoClaim()">
+            <span class="check-box"></span>
+            <span>+ اليوزرات غير المؤكدة</span>
+          </label>
+          <div class="known-issues">
+            <div class="ki-title">قيود معروفة</div>
+            <div class="ki-badges">
+              <span class="ki-badge red">30y cooldown</span>
+              <span class="ki-badge yellow">Rate-limit</span>
+              <span class="ki-badge purple">CAPTCHA</span>
+              <span class="ki-badge grey">Session expiry</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+    <!-- ═══════════════════════════════════════════════════ -->
+
+    <!-- ══════════ CENTER: LOG ══════════ -->
+    <section class="log-section">
       <div class="panel-hdr">
         <span class="panel-dot" style="background:var(--accent)"></span>
         <span class="panel-title">ACTIVITY LOG</span>
-        <button class="clear-btn" onclick="clearLog()">✕ Clear</button>
+        <button class="clear-btn" onclick="clearLog()">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <line x1="1.5" y1="1.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="8.5" y1="1.5" x2="1.5" y2="8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          Clear
+        </button>
       </div>
       <div class="log-wrap" id="log-wrap"></div>
     </section>
 
-    <div class="col-div"></div>
+    <!-- ══════════ RIGHT PANEL ══════════ -->
+    <aside class="right-panel">
 
-    <!-- Right column -->
-    <aside class="right-col">
+      <!-- Stats -->
       <div class="panel-hdr">
         <span class="panel-dot" style="background:var(--purple)"></span>
         <span class="panel-title">STATISTICS</span>
       </div>
       <div class="stats-grid">
         <div class="stat-card" style="--c:var(--accent)">
+          <div class="stat-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6.5" stroke="var(--accent)" stroke-width="1.2" opacity="0.4"/>
+              <path d="M8 4V8L10.5 10.5" stroke="var(--accent)" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+          </div>
           <div class="stat-lbl">CHECKED</div>
           <div class="stat-val" id="s-checked">0</div>
         </div>
         <div class="stat-card" style="--c:var(--green)">
+          <div class="stat-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6.5" stroke="var(--green)" stroke-width="1.2" opacity="0.4"/>
+              <path d="M5 8L7 10.5L11 5.5" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
           <div class="stat-lbl">AVAILABLE</div>
           <div class="stat-val" id="s-avail">0</div>
         </div>
         <div class="stat-card" style="--c:var(--subtext)">
+          <div class="stat-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6.5" stroke="var(--subtext)" stroke-width="1.2" opacity="0.4"/>
+              <line x1="5" y1="8" x2="11" y2="8" stroke="var(--subtext)" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
           <div class="stat-lbl">TAKEN</div>
           <div class="stat-val" id="s-taken">0</div>
         </div>
         <div class="stat-card" style="--c:var(--red)">
+          <div class="stat-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6.5" stroke="var(--red)" stroke-width="1.2" opacity="0.4"/>
+              <line x1="5.5" y1="5.5" x2="10.5" y2="10.5" stroke="var(--red)" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="10.5" y1="5.5" x2="5.5" y2="10.5" stroke="var(--red)" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
           <div class="stat-lbl">ERRORS</div>
           <div class="stat-val" id="s-errors">0</div>
         </div>
       </div>
 
+      <!-- Hits -->
       <div class="panel-hdr" style="margin-top:14px">
         <span class="panel-dot" style="background:var(--green)"></span>
         <span class="panel-title">HITS</span>
+        <span class="hits-count" id="hits-count"></span>
       </div>
       <div class="hits-wrap" id="hits-wrap"></div>
-    </aside>
-  </main>
 
-  <!-- ── STATUS BAR ── -->
+    </aside>
+  </div>
+
+  <!-- STATUS BAR -->
   <footer class="statusbar">
-    <span id="status-txt">⚡&nbsp;&nbsp;Idle</span>
+    <span id="status-txt">
+      <svg width="9" height="9" viewBox="0 0 9 9" fill="none" style="margin-right:5px;vertical-align:middle">
+        <circle cx="4.5" cy="4.5" r="3.5" fill="var(--subtext)" opacity="0.5"/>
+      </svg>
+      Idle
+    </span>
     <span class="sb-sep">|</span>
-    <span class="sb-version">LAKE v2 — Web Edition</span>
+    <span class="sb-version">LAKE v2 · Web Edition</span>
   </footer>
 
-  <!-- ── DEEP CHECK MODAL ── -->
+  <!-- ═══════════════════ DEEP CHECK MODAL ═══════════════════ -->
   <div class="overlay" id="deep-overlay" onclick="closeDeepModal(event)" style="display:none">
     <div class="modal" onclick="event.stopPropagation()">
       <div class="modal-hdr">
-        <span>◈&nbsp;&nbsp;DEEP VERIFICATION</span>
-        <button class="modal-x" onclick="closeDeepModal()">✕</button>
+        <div class="modal-hdr-left">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6.5" stroke="var(--accent)" stroke-width="1.3"/>
+            <circle cx="8" cy="8" r="2.5" stroke="var(--accent)" stroke-width="1.3"/>
+            <line x1="8" y1="1" x2="8" y2="0.5" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+            <line x1="8" y1="15.5" x2="8" y2="15" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+            <line x1="1" y1="8" x2="0.5" y2="8" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+            <line x1="15.5" y1="8" x2="15" y2="8" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          DEEP VERIFICATION
+        </div>
+        <button class="modal-x" onclick="closeDeepModal()">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="12" y1="2" x2="2" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
       </div>
       <div class="modal-sep"></div>
       <p class="modal-info" id="deep-info"></p>
       <div class="modal-row">
-        <span class="cfg-label">عدد اليوزرات:</span>
-        <input class="cfg-input" id="deep-count" type="number" value="20" min="1" style="width:65px;margin:0 10px">
-        <span class="cfg-label dim" id="deep-max"></span>
+        <span class="field-label">عدد اليوزرات:</span>
+        <input class="si-input" id="deep-count" type="number" value="20" min="1" style="width:70px">
+        <span class="field-label dim" id="deep-max"></span>
       </div>
       <div class="modal-body" id="deep-body"></div>
       <div class="modal-prog" id="deep-prog"></div>
       <div class="modal-foot">
-        <button class="btn btn-green" onclick="startDeepCheck()">▶ ابدأ الفحص الدقيق</button>
-        <button class="btn btn-red"   onclick="closeDeepModal()">✕ إغلاق</button>
+        <button class="hbtn hbtn-green" onclick="startDeepCheck()">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M3 2L10 6L3 10V2Z" fill="currentColor"/>
+          </svg>
+          ابدأ الفحص الدقيق
+        </button>
+        <button class="hbtn hbtn-red" onclick="closeDeepModal()">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+            <rect x="2" y="2" width="7" height="7" rx="1" fill="currentColor"/>
+          </svg>
+          إغلاق
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- ── PROXY TEST MODAL ── -->
+  <!-- ═══════════════════ PROXY TEST MODAL ═══════════════════ -->
   <div class="overlay" id="proxy-overlay" onclick="closeProxyModal(event)" style="display:none">
     <div class="modal" onclick="event.stopPropagation()">
       <div class="modal-hdr">
-        <span>◈&nbsp;&nbsp;PROXY TESTER</span>
-        <button class="modal-x" onclick="closeProxyModal()">✕</button>
+        <div class="modal-hdr-left">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="1" y="5" width="5" height="4" rx="1.5" stroke="var(--purple)" stroke-width="1.3"/>
+            <rect x="10" y="5" width="5" height="4" rx="1.5" stroke="var(--purple)" stroke-width="1.3"/>
+            <rect x="5.5" y="9.5" width="5" height="4" rx="1.5" stroke="var(--purple)" stroke-width="1.3"/>
+            <path d="M3.5 9V11.5H7.5" stroke="var(--purple)" stroke-width="1.2" stroke-linecap="round"/>
+            <path d="M12.5 9V11.5H10.5" stroke="var(--purple)" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          PROXY TESTER
+        </div>
+        <button class="modal-x" onclick="closeProxyModal()">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="12" y1="2" x2="2" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
       </div>
       <div class="modal-sep"></div>
       <div class="modal-body" id="proxy-body"></div>
       <div class="modal-prog" id="proxy-prog"></div>
       <div class="modal-foot">
-        <button class="btn btn-green" onclick="runProxyTest()">▶ ابدأ الفحص</button>
-        <button class="btn btn-red"   onclick="closeProxyModal()">✕ إغلاق</button>
+        <button class="hbtn hbtn-green" onclick="runProxyTest()">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M3 2L10 6L3 10V2Z" fill="currentColor"/>
+          </svg>
+          ابدأ الفحص
+        </button>
+        <button class="hbtn hbtn-red" onclick="closeProxyModal()">إغلاق</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ HELP MODAL ═══════════════════ -->
+  <div class="overlay" id="help-overlay" onclick="closeHelp(event)" style="display:none">
+    <div class="modal help-modal" onclick="event.stopPropagation()">
+      <div class="modal-hdr">
+        <div class="modal-hdr-left" id="help-title">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6.5" stroke="var(--purple)" stroke-width="1.3"/>
+            <text x="8" y="12" text-anchor="middle" fill="var(--purple)" font-size="9" font-weight="700" font-family="Inter">?</text>
+          </svg>
+          مساعدة
+        </div>
+        <button class="modal-x" onclick="closeHelp()">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <line x1="12" y1="2" x2="2" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-sep"></div>
+      <div class="modal-body help-body" id="help-body"></div>
     </div>
   </div>
 

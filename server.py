@@ -139,9 +139,47 @@ def send_webhook(url, u):
     try: requests.post(url, json={"content": f"Available: @{u}"}, timeout=5)
     except: pass
 
-def generate_usernames(amount, length):
-    chars = string.ascii_lowercase + string.digits
-    return ["".join(random.choice(chars) for _ in range(length)) for _ in range(amount)]
+def parse_lengths(length_str) -> list:
+    """
+    Parse length string into a list of ints.
+    Accepts: '5'  |  '3-6'  |  '3,4,5'
+    """
+    s = str(length_str).strip()
+    if '-' in s:
+        parts = s.split('-', 1)
+        try:
+            a, b = int(parts[0].strip()), int(parts[1].strip())
+            lo, hi = min(a, b), max(a, b)
+            return list(range(max(1, lo), min(24, hi) + 1))
+        except Exception:
+            return [5]
+    elif ',' in s:
+        out = []
+        for x in s.split(','):
+            try:
+                v = int(x.strip())
+                if 1 <= v <= 24:
+                    out.append(v)
+            except Exception:
+                pass
+        return out if out else [5]
+    else:
+        try:
+            v = int(s)
+            return [max(1, min(24, v))]
+        except Exception:
+            return [5]
+
+def generate_usernames(amount, length, prefix=''):
+    chars   = string.ascii_lowercase + string.digits
+    lengths = parse_lengths(length) if not isinstance(length, list) else length
+    prefix  = str(prefix).strip()[:12]
+    out     = []
+    for i in range(amount):
+        rand_len = max(1, lengths[i % len(lengths)])
+        rand_part = "".join(random.choice(chars) for _ in range(rand_len))
+        out.append(prefix + rand_part)
+    return out
 
 def load_from_txt():
     if not os.path.exists("usernames.txt"): return []
@@ -687,10 +725,15 @@ def on_start(data):
     _reset_state()
     mode    = data.get('mode', 'generate')
     amount  = max(1, int(data.get('amount', 20)))
-    length  = max(1, int(data.get('length', 5)))
+    length  = data.get('length', '5')
+    prefix  = data.get('prefix', '')
     webhook = data.get('webhook', '')
     if mode == 'generate':
-        usernames = generate_usernames(amount, length)
+        lengths_list = parse_lengths(length)
+        len_display  = str(length).strip()
+        pre_display  = f"  prefix='{prefix}'" if prefix else ""
+        _log(f"[CONFIG]  {amount} يوزر  •  lengths={len_display}{pre_display}", "info")
+        usernames = generate_usernames(amount, length, prefix)
     else:
         usernames = load_from_txt()
         if not usernames:
@@ -702,9 +745,11 @@ def on_test_run(data):
     if _running:
         _log("[TEST]  يوجد فحص جارٍ — أوقفه أولاً", "err"); return
     _reset_state()
-    length    = max(1, int(data.get('length', 5)))
-    usernames = generate_usernames(10, length)
-    _log("[TEST RUN]  فحص سريع لـ 10 يوزرات…", "hit")
+    length    = data.get('length', '5')
+    prefix    = data.get('prefix', '')
+    usernames = generate_usernames(10, length, prefix)
+    pre_display = f" (prefix='{prefix}')" if prefix else ""
+    _log(f"[TEST RUN]  فحص سريع لـ 10 يوزرات{pre_display}…", "hit")
     _run_checker(usernames, data.get('webhook', ''), "Test Running")
 
 @socketio.on('stop')
