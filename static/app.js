@@ -84,13 +84,20 @@ socket.on('proxy_test_done', ({ good, total }) => {
 });
 
 // Deep check results
-socket.on('deep_result', ({ username, verdict }) => {
+socket.on('deep_result', ({ username, verdict, signals }) => {
   const body   = document.getElementById('deep-body');
   const icons  = { available:'✅', banned:'🔴', taken:'⬛', uncertain:'🟡' };
   const cls    = { available:'deep-avail', banned:'deep-banned', taken:'deep-taken', uncertain:'deep-uncertain' };
   const line   = document.createElement('div');
   line.className  = cls[verdict] || '';
-  line.textContent = `  ${icons[verdict] || '?'}  @${username}  →  ${verdict}`;
+  // Show per-signal breakdown
+  let sigStr = '';
+  if (signals) {
+    const s = signals;
+    const dot = v => v === 'available' ? '✅' : v === 'taken' ? '⬛' : v === 'banned' ? '🔴' : '🟡';
+    sigStr = `  [API:${dot(s.api)} oEmbed:${dot(s.oembed)} Web:${dot(s.web)}]`;
+  }
+  line.textContent = `  ${icons[verdict] || '?'}  @${username}  →  ${verdict}${sigStr}`;
   body.appendChild(line);
   body.scrollTop = body.scrollHeight;
   const prog = document.getElementById('deep-prog');
@@ -247,7 +254,8 @@ function openDeepModal(hits) {
   deepHits = hits;
   document.getElementById('deep-info').textContent =
     `تم العثور على ${hits.length} يوزر محتمل.\n` +
-    `الفحص الدقيق يتحقق باستخدام: oEmbed API + فحص الصفحة\n` +
+    `الفحص الدقيق يستخدم 3 مصادر: User-Detail API + oEmbed + صفحة الويب\n` +
+    `يحتاج أغلبية الإشارات قبل الحكم بالإتاحة — لا أخطاء.\n` +
     `النتائج: ✅ متاح  •  🔴 محظور/معطّل  •  ⬛ مأخوذ  •  🟡 غير مؤكد`;
   document.getElementById('deep-count').value = Math.min(20, hits.length);
   document.getElementById('deep-max').textContent = `(max ${hits.length})`;
@@ -325,7 +333,8 @@ function captchaDirty() { _capDirty  = true; }
 
 function setAccount() {
   const val = document.getElementById('cfg-session').value.trim();
-  socket.emit('set_account', { session_id: val });
+  const ms  = document.getElementById('cfg-mstoken').value.trim();
+  socket.emit('set_account', { session_id: val, ms_token: ms });
   _acctDirty = false;
 }
 function setCaptchaKey() {

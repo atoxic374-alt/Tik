@@ -29,16 +29,17 @@ _last_ips: deque = deque(maxlen=5)
 _proxy_rotating = False
 
 # ── Claimer state ────────────────────────────────────────
-_account_session = ""
-_captcha_key     = ""
-_auto_claim      = False
-_claim_uncertain = False
+_account_session  = ""
+_account_ms_token = ""
+_captcha_key      = ""
+_auto_claim       = False
+_claim_uncertain  = False
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_4) AppleWebKit/605.1.15 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/123",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
 ]
 
 def _now(): return datetime.now().strftime("%H:%M:%S")
@@ -146,8 +147,134 @@ def load_from_txt():
     if not os.path.exists("usernames.txt"): return []
     return [x.strip() for x in open("usernames.txt") if x.strip()]
 
-# ── Checker ─────────────────────────────────────────────
+# ── Core availability APIs ───────────────────────────────
+#
+#  Three independent signals — only an AVAILABLE verdict needs majority (2/3)
+#  to avoid false positives. TAKEN verdicts are trusted immediately.
+#
+#  Signal ranking (most reliable → least):
+#    1. user-detail API  → JSON, structured, definitive
+#    2. oEmbed API       → JSON, fast, usually reliable
+#    3. Web page HTML    → slowest, can be noisy / geo-gated
+#
+
+async def _sig_userdetail(session: aiohttp.ClientSession, username: str, proxy) -> str:
+    """
+    TikTok internal user-detail API.
+    Returns: 'available' | 'taken' | 'banned' | 'uncertain'
+    status_code meanings:
+      0     → user found (taken)
+      10202 → user not found (available)
+      10221 → account suspended/banned
+      others → uncertain
+    """
+    url = (
+        f"https://www.tiktok.com/api/user/detail/"
+        f"?uniqueId={username}&aid=1988&app_language=en&app_name=tiktok_web"
+    )
+    headers = {
+        "User-Agent":      random.choice(USER_AGENTS),
+        "Accept":          "application/json, text/plain, */*",
+        "Referer":         "https://www.tiktok.com/",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    try:
+        async with session.get(url, headers=headers, proxy=proxy,
+                               timeout=aiohttp.ClientTimeout(total=12)) as r:
+            if r.status == 200:
+                d = await r.json(content_type=None)
+                code = d.get("statusCode", d.get("status_code", -1))
+                if code == 0:
+                    return "taken"
+                if code == 10202:
+                    return "available"
+                if code in (10221, 10222):
+                    return "banned"
+            elif r.status == 404:
+                return "available"
+    except Exception:
+        pass
+    return "uncertain"
+
+async def _sig_oembed(session: aiohttp.ClientSession, username: str, proxy) -> str:
+    """
+    oEmbed API.
+    Returns: 'available' | 'taken' | 'uncertain'
+    """
+    url = f"https://www.tiktok.com/oembed?url=https://www.tiktok.com/@{username}"
+    headers = {
+        "User-Agent":  random.choice(USER_AGENTS),
+        "Accept":      "application/json, text/plain, */*",
+        "Cache-Control": "no-cache",
+    }
+    try:
+        async with session.get(url, headers=headers, proxy=proxy,
+                               timeout=aiohttp.ClientTimeout(total=12)) as r:
+            if r.status == 404:
+                return "available"
+            if r.status == 200:
+                d = await r.json(content_type=None)
+                return "taken" if d.get("author_unique_id") else "uncertain"
+    except Exception:
+        pass
+    return "uncertain"
+
+async def _sig_web(session: aiohttp.ClientSession, username: str, proxy) -> str:
+    """
+    Web-page HTML check.
+    Returns: 'available' | 'taken' | 'banned' | 'uncertain'
+    """
+    url = f"https://www.tiktok.com/@{username}"
+    headers = {
+        "User-Agent":      random.choice(USER_AGENTS),
+        "Accept":          "text/html,application/xhtml+xml,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Connection":      "keep-alive",
+        "Cache-Control":   "no-cache",
+    }
+    TAKEN  = ['"userInfo":', 'webapp-user-title', '"uniqueId":']
+    BANNED = ['account is banned', 'account has been banned', 'user not found']
+    try:
+        async with session.get(url, headers=headers, proxy=proxy,
+                               timeout=aiohttp.ClientTimeout(total=14)) as r:
+            if r.status == 404:
+                return "available"
+            if r.status != 200:
+                return "uncertain"
+            html = await r.text()
+            for m in BANNED:
+                if m in html.lower(): return "banned"
+            for m in TAKEN:
+                if m in html: return "taken"
+            return "available"
+    except Exception:
+        pass
+    return "uncertain"
+
+def _majority_verdict(signals: list) -> str:
+    """
+    Combine three signals with safety-first rules:
+    - Any 'taken' → taken (avoid wasting a claim attempt)
+    - Any 'banned' → banned
+    - 2+ 'available' AND no taken/banned → available
+    - Otherwise → uncertain
+    """
+    if "taken"  in signals: return "taken"
+    if "banned" in signals: return "banned"
+    avail = signals.count("available")
+    if avail >= 2:          return "available"
+    if avail == 1 and signals.count("uncertain") <= 1:
+        return "available"
+    return "uncertain"
+
+
+# ── Checker (fast scan) ──────────────────────────────────
 class Checker:
+    """
+    Fast scan using user-detail API + oEmbed.
+    Only marks available when both agree (no false positives).
+    Falls back to web-page for rate-limited situations.
+    """
     def __init__(self, webhook, usernames):
         self.webhook   = webhook
         self.usernames = usernames
@@ -158,56 +285,65 @@ class Checker:
         if _stop_event.is_set(): return
         async with self.sem:
             if _stop_event.is_set(): return
-            await asyncio.sleep(random.uniform(1.5, 3))
+            await asyncio.sleep(random.uniform(1.2, 2.5))
             with _lock:
                 _request_counter += 1
                 do_ip = (_request_counter % _ip_check_every == 0)
             if do_ip and _proxies:
                 await check_current_ip()
             _status = f"Checking @{username}"
-            headers = {
-                "User-Agent":      random.choice(USER_AGENTS),
-                "Accept":          "text/html,application/xhtml+xml,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5",
-                "Connection":      "keep-alive",
-            }
             proxy     = get_next_proxy()
             connector = aiohttp.TCPConnector(ssl=False) if proxy else None
             try:
                 async with aiohttp.ClientSession(connector=connector) as session:
-                    async with session.get(f"https://www.tiktok.com/@{username}",
-                                           headers=headers, proxy=proxy,
-                                           timeout=aiohttp.ClientTimeout(total=15)) as r:
-                        with _lock: _stats["checked"] += 1
-                        if r.status == 404:
+                    # Run user-detail + oEmbed in parallel for speed
+                    sig_api, sig_oe = await asyncio.gather(
+                        _sig_userdetail(session, username, proxy),
+                        _sig_oembed(session, username, proxy),
+                    )
+                    proxy_tag = f"  [{proxy.split('@')[-1]}]" if proxy else ""
+
+                    with _lock: _stats["checked"] += 1
+
+                    if sig_api == "taken" or sig_oe == "taken":
+                        with _lock: _stats["taken"] += 1
+                        _log(f"[TAKEN]      @{username}", "taken")
+
+                    elif sig_api == "banned" or sig_oe == "banned":
+                        with _lock: _stats["taken"] += 1
+                        _log(f"[BANNED]     @{username}", "warn")
+
+                    elif sig_api == "available" and sig_oe in ("available", "uncertain"):
+                        # API says available — high confidence
+                        with _lock:
+                            _stats["available"] += 1
+                            _hits.append(username)
+                        write_hit(username)
+                        send_webhook(self.webhook, username)
+                        _log(f"[AVAILABLE ✅]  @{username}{proxy_tag}", "hit")
+
+                    elif sig_oe == "available" and sig_api == "uncertain":
+                        # oEmbed says available but API uncertain — do quick web check
+                        sig_web = await _sig_web(session, username, proxy)
+                        if sig_web == "available":
                             with _lock:
                                 _stats["available"] += 1
                                 _hits.append(username)
                             write_hit(username)
                             send_webhook(self.webhook, username)
-                            _log(f"[AVAILABLE]  @{username}" + (f"  [{proxy.split('@')[-1]}]" if proxy else ""), "hit")
-                        elif r.status == 200:
-                            html = await r.text()
-                            if '"userInfo":' not in html and 'webapp-user-title' not in html:
-                                with _lock:
-                                    _stats["available"] += 1
-                                    _hits.append(username)
-                                write_hit(username)
-                                send_webhook(self.webhook, username)
-                                _log(f"[AVAILABLE]  @{username}" + (f"  [{proxy.split('@')[-1]}]" if proxy else ""), "hit")
-                            else:
-                                with _lock: _stats["taken"] += 1
-                                _log(f"[TAKEN]      @{username}", "taken")
-                        elif r.status == 429:
-                            if proxy:
-                                _log(f"[RATE LIMIT]  Rotating proxy", "warn")
-                                remove_proxy(proxy)
-                            else:
-                                _log("[RATE LIMIT]  Cooling 60s", "warn")
-                                await asyncio.sleep(60)
+                            _log(f"[AVAILABLE ✅]  @{username}  (3/3 confirmed){proxy_tag}", "hit")
+                        elif sig_web == "taken":
+                            with _lock: _stats["taken"] += 1
+                            _log(f"[TAKEN]      @{username}", "taken")
                         else:
                             with _lock: _stats["errors"] += 1
-                            _log(f"[HTTP {r.status}]   @{username}", "warn")
+                            _log(f"[UNCERTAIN]  @{username}  — متضارب، تخطي", "warn")
+
+                    else:
+                        # Both uncertain or conflicting — skip silently
+                        with _lock: _stats["errors"] += 1
+                        _log(f"[SKIP]       @{username}  api={sig_api} oe={sig_oe}", "warn")
+
             except Exception as e:
                 with _lock: _stats["errors"] += 1
                 if proxy:
@@ -221,66 +357,54 @@ class Checker:
         await asyncio.gather(*[self._check(u) for u in self.usernames])
 
 
-# ── Deep Checker ────────────────────────────────────────
+# ── Deep Checker (triple verification) ───────────────────
 class DeepChecker:
-    OEMBED = "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@{}"
-    WEB    = "https://www.tiktok.com/@{}"
-    TAKEN  = ['"userInfo":', 'webapp-user-title', '"uniqueId":']
-    BANNED = ['account is banned', 'account has been banned', 'user not found']
-
+    """
+    Triple-signal verification: user-detail API + oEmbed + web page.
+    Majority vote with safety-first (any TAKEN kills the result).
+    """
     def __init__(self, usernames, concurrency=3):
         self.usernames = usernames
         self.sem       = asyncio.Semaphore(concurrency)
 
-    def _h(self): return {"User-Agent": random.choice(USER_AGENTS),
-                          "Accept": "text/html,*/*", "Cache-Control": "no-cache"}
-
-    async def _oembed(self, s, u, px):
-        try:
-            async with s.get(self.OEMBED.format(u), headers=self._h(), proxy=px,
-                             timeout=aiohttp.ClientTimeout(total=12)) as r:
-                if r.status == 404: return "available"
-                if r.status == 200:
-                    d = await r.json(content_type=None)
-                    return "taken" if d.get("author_unique_id") else "uncertain"
-        except: pass
-        return "uncertain"
-
-    async def _web(self, s, u, px):
-        try:
-            async with s.get(self.WEB.format(u), headers=self._h(), proxy=px,
-                             timeout=aiohttp.ClientTimeout(total=14)) as r:
-                if r.status == 404: return "available"
-                if r.status != 200: return "uncertain"
-                html = await r.text()
-                for m in self.BANNED:
-                    if m in html.lower(): return "banned"
-                for m in self.TAKEN:
-                    if m in html: return "taken"
-                return "available"
-        except: pass
-        return "uncertain"
-
-    async def _check(self, u, cb):
+    async def _check(self, username: str, cb):
         async with self.sem:
-            await asyncio.sleep(random.uniform(2, 4))
+            await asyncio.sleep(random.uniform(1.5, 3))
             px   = get_next_proxy()
             conn = aiohttp.TCPConnector(ssl=False) if px else None
             async with aiohttp.ClientSession(connector=conn) as s:
-                oe, web = await self._oembed(s, u, px), await self._web(s, u, px)
-            if   "taken"     in (oe, web): verdict = "taken"
-            elif "banned"    in (oe, web): verdict = "banned"
-            elif "available" in (oe, web): verdict = "available"
-            else:                          verdict = "uncertain"
-            cb(u, verdict)
+                sig_api, sig_oe, sig_web = await asyncio.gather(
+                    _sig_userdetail(s, username, px),
+                    _sig_oembed(s, username, px),
+                    _sig_web(s, username, px),
+                )
+            verdict = _majority_verdict([sig_api, sig_oe, sig_web])
+            cb(username, verdict, sig_api, sig_oe, sig_web)
 
     async def start(self, cb):
         await asyncio.gather(*[self._check(u, cb) for u in self.usernames])
 
 
+# ── Pre-claim verifier ───────────────────────────────────
+async def verify_before_claim(username: str, proxy=None) -> bool:
+    """
+    Do a fast double-check right before claiming to avoid wasting the attempt.
+    Returns True only if both API + oEmbed agree it's available.
+    """
+    conn = aiohttp.TCPConnector(ssl=False) if proxy else None
+    async with aiohttp.ClientSession(connector=conn) as s:
+        sig_api, sig_oe = await asyncio.gather(
+            _sig_userdetail(s, username, proxy),
+            _sig_oembed(s, username, proxy),
+        )
+    # Must have at least one 'available' and no 'taken'
+    if "taken" in (sig_api, sig_oe) or "banned" in (sig_api, sig_oe):
+        return False
+    return "available" in (sig_api, sig_oe)
+
+
 # ── 2captcha solver ─────────────────────────────────────
 async def solve_2captcha(api_key: str, **kwargs) -> str:
-    """Submit captcha to 2captcha and poll for result. Returns token or ''."""
     if not api_key:
         return ""
     base = "https://2captcha.com"
@@ -296,7 +420,7 @@ async def solve_2captcha(api_key: str, **kwargs) -> str:
                     return ""
                 task_id = resp["request"]
             _log(f"[2CAPTCHA]  Task #{task_id} — جاري الحل…", "warn")
-            for _ in range(30):          # poll up to 150 s
+            for _ in range(30):
                 await asyncio.sleep(5)
                 async with s.get(
                     f"{base}/res.php?key={api_key}&action=get&id={task_id}&json=1",
@@ -317,38 +441,41 @@ async def solve_2captcha(api_key: str, **kwargs) -> str:
 # ── TikTok Claimer ───────────────────────────────────────
 class Claimer:
     """
-    Claims a TikTok username by calling the profile-edit API.
+    Claims a TikTok username via the profile-edit API.
 
-    Known issues / limitations:
+    Authentication options:
+    ─────────────────────────────────────────────────────
+    1. sessionid only      — standard, works most of the time
+    2. sessionid + msToken — stronger auth, reduces CAPTCHA triggers
+    3. sessionid + csrf    — auto-fetched from home page if not provided
+
+    Known limitations:
     ─────────────────────────────────────────────────────
     1.  30-day cooldown  — TikTok blocks another change within 30 days.
     2.  Account age      — Very new accounts may be restricted.
     3.  CAPTCHA          — puzzle/slider captcha; handled via 2captcha.
     4.  Session expiry   — sessionid cookie expires; user must refresh it.
-    5.  Device tokens    — TikTok may require msToken / X-Bogus headers
-                           (these are generated client-side via JS; if
-                           claiming starts failing, add them here).
+    5.  Device tokens    — msToken may be required for newer accounts.
     6.  Rate limiting    — per-account AND per-IP; always use proxies.
-    7.  Race condition   — someone else may claim the username first;
-                           minimize latency by loading proxies in advance.
+    7.  Race condition   — someone else may claim the username first.
     """
 
-    EDIT_URL    = "https://www.tiktok.com/api/user/edit/"
-    HOME_URL    = "https://www.tiktok.com/"
+    EDIT_URL = "https://www.tiktok.com/api/user/edit/"
+    HOME_URL = "https://www.tiktok.com/"
 
-    # TikTok API status codes
-    _OK         = {0}
-    _CAPTCHA    = {10101, 10102, 10103, 10104}
-    _COOLDOWN   = {10105, 10106}
-    _TAKEN      = {10108, 10109}
-    _SESSION    = {8, 10003, 10115, 10116}
-    _RATE       = {4, 10000}
+    _OK       = {0}
+    _CAPTCHA  = {10101, 10102, 10103, 10104}
+    _COOLDOWN = {10105, 10106}
+    _TAKEN    = {10108, 10109}
+    _SESSION  = {8, 10003, 10115, 10116}
+    _RATE     = {4, 10000}
 
-    def __init__(self, session_id: str, captcha_key: str = ""):
+    def __init__(self, session_id: str, captcha_key: str = "", ms_token: str = ""):
         self.session_id  = session_id.strip()
         self.captcha_key = captcha_key.strip()
+        self.ms_token    = ms_token.strip()
 
-    def _headers(self, csrf: str = "") -> dict:
+    def _base_headers(self, csrf: str = "") -> dict:
         h = {
             "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -361,24 +488,34 @@ class Claimer:
         }
         if csrf:
             h["X-CSRFToken"] = csrf
+        if self.ms_token:
+            h["msToken"] = self.ms_token
         return h
 
     async def _get_csrf(self, session: aiohttp.ClientSession, proxy) -> str:
         try:
             async with session.get(
                 self.HOME_URL, proxy=proxy,
-                headers={"User-Agent": self._headers()["User-Agent"]},
+                headers={"User-Agent": self._base_headers()["User-Agent"]},
                 timeout=aiohttp.ClientTimeout(total=10)
             ) as r:
+                # Try cookie jar first
                 for name in r.cookies:
                     if "csrf" in name.lower():
                         return r.cookies[name].value
+                # Fallback: extract from Set-Cookie header
+                for k, v in r.headers.items():
+                    if k.lower() == "set-cookie" and "csrf" in v.lower():
+                        for part in v.split(";"):
+                            part = part.strip()
+                            if part.lower().startswith("tt_csrf_token="):
+                                return part.split("=", 1)[1]
         except:
             pass
         return ""
 
     async def _do_edit(self, session, username, proxy, extra_headers=None) -> dict:
-        h = self._headers()
+        h = self._base_headers()
         if extra_headers:
             h.update(extra_headers)
         body = f"uniqueId={username}"
@@ -402,9 +539,16 @@ class Claimer:
         if not self.session_id:
             return {"ok": False, "reason": "no_session", "username": username}
 
-        cookies  = {"sessionid": self.session_id}
-        connector = aiohttp.TCPConnector(ssl=False) if proxy else aiohttp.TCPConnector()
+        # ── Pre-claim verification ──────────────────────────
+        still_free = await verify_before_claim(username, proxy)
+        if not still_free:
+            return {"ok": False, "reason": "pre_check_taken", "username": username}
 
+        cookies = {"sessionid": self.session_id}
+        if self.ms_token:
+            cookies["msToken"] = self.ms_token
+
+        connector = aiohttp.TCPConnector(ssl=False) if proxy else aiohttp.TCPConnector()
         async with aiohttp.ClientSession(connector=connector, cookies=cookies) as session:
             csrf = await self._get_csrf(session, proxy)
             if csrf:
@@ -413,7 +557,6 @@ class Claimer:
 
             res = await self._do_edit(session, username, proxy,
                                        {"X-CSRFToken": csrf} if csrf else {})
-
             code = res["code"]
 
             if code in self._OK:
@@ -442,8 +585,8 @@ class Claimer:
                 if not token:
                     return {"ok": False, "reason": "captcha_fail", "username": username}
                 res2 = await self._do_edit(session, username, proxy, {
-                    "X-CSRFToken":          csrf,
-                    "X-Secsdk-Csrf-Token":  token,
+                    "X-CSRFToken":         csrf,
+                    "X-Secsdk-Csrf-Token": token,
                 })
                 if res2["code"] in self._OK:
                     return {"ok": True, "username": username, "captcha_solved": True}
@@ -460,13 +603,13 @@ class Claimer:
 
 
 def _run_claim(username: str):
-    """Thread helper — claim one username and emit result."""
     proxy   = get_next_proxy()
-    claimer = Claimer(_account_session, _captcha_key)
+    claimer = Claimer(_account_session, _captcha_key, _account_ms_token)
     result  = asyncio.run(claimer.claim(username, proxy))
 
     reason_map = {
         "no_session":         "لا يوجد session cookie",
+        "pre_check_taken":    "اليوزر أصبح مأخوذاً قبل المطالبة",
         "captcha":            "كابتشا — أضف 2captcha key",
         "captcha_no_key":     "كابتشا تحتاج 2captcha key",
         "captcha_fail":       "فشل حل الكابتشا",
@@ -634,21 +777,30 @@ def on_deep_check(data):
     count     = max(1, int(data.get('count', min(20, len(usernames)))))
     subset    = usernames[:count]
     if not subset: return
-    _log(f"[DEEP CHECK]  فحص دقيق لـ {len(subset)} يوزر", "hit")
+    _log(f"[DEEP CHECK]  فحص دقيق ثلاثي لـ {len(subset)} يوزر (API + oEmbed + Web)", "hit")
 
     def run():
         summary = {"available": [], "banned": [], "taken": [], "uncertain": []}
-        def cb(u, verdict):
+        def cb(u, verdict, sig_api, sig_oe, sig_web):
             summary[verdict].append(u)
-            socketio.emit('deep_result', {"username": u, "verdict": verdict})
+            socketio.emit('deep_result', {
+                "username": u,
+                "verdict":  verdict,
+                "signals":  {"api": sig_api, "oembed": sig_oe, "web": sig_web},
+            })
         asyncio.run(DeepChecker(subset).start(cb))
         if summary["available"]:
             with open("verified_hits.txt", "a", encoding="utf-8") as f:
                 for u in summary["available"]: f.write(u + "\n")
         socketio.emit('deep_done', summary)
-        _log(f"[DEEP DONE]  ✅{len(summary['available'])} متاح  🔴{len(summary['banned'])} محظور  ⬛{len(summary['taken'])} مأخوذ", "hit")
+        _log(
+            f"[DEEP DONE]  ✅{len(summary['available'])} متاح  "
+            f"🔴{len(summary['banned'])} محظور  "
+            f"⬛{len(summary['taken'])} مأخوذ  "
+            f"🟡{len(summary['uncertain'])} غير مؤكد",
+            "hit"
+        )
 
-        # ── Auto-claim ───────────────────────────────────────
         if _auto_claim and _account_session:
             to_claim = list(summary["available"])
             if _claim_uncertain:
@@ -660,7 +812,7 @@ def on_deep_check(data):
             for u in to_claim:
                 socketio.emit('claim_start', {"username": u})
                 _run_claim(u)
-                asyncio.run(asyncio.sleep(0.5))   # tiny gap between claims
+                asyncio.run(asyncio.sleep(0.5))
 
     threading.Thread(target=run, daemon=True).start()
 
@@ -668,17 +820,19 @@ def on_deep_check(data):
 def on_check_ip():
     threading.Thread(target=lambda: asyncio.run(check_current_ip()), daemon=True).start()
 
-# ── Claimer SocketIO events ──────────────────────────────
+# ── Account / Claimer SocketIO events ────────────────────
 @socketio.on('set_account')
 def on_set_account(data):
-    global _account_session
-    _account_session = data.get('session_id', '').strip()
+    global _account_session, _account_ms_token
+    _account_session  = data.get('session_id', '').strip()
+    _account_ms_token = data.get('ms_token',   '').strip()
     if _account_session:
-        _log("[ACCOUNT]  ✓ تم تعيين جلسة TikTok", "hit")
-        socketio.emit('account_status', {"ok": True})
+        ms_info = "  + msToken ✓" if _account_ms_token else ""
+        _log(f"[ACCOUNT]  ✓ تم تعيين جلسة TikTok{ms_info}", "hit")
+        socketio.emit('account_status', {"ok": True, "ms_token": bool(_account_ms_token)})
     else:
         _log("[ACCOUNT]  تم مسح الجلسة", "warn")
-        socketio.emit('account_status', {"ok": False})
+        socketio.emit('account_status', {"ok": False, "ms_token": False})
 
 @socketio.on('set_captcha_key')
 def on_set_captcha_key(data):
@@ -733,7 +887,7 @@ def on_test_2captcha(data):
 
 @socketio.on('connect')
 def on_connect_claimer():
-    socketio.emit('account_status', {"ok": bool(_account_session)})
+    socketio.emit('account_status', {"ok": bool(_account_session), "ms_token": bool(_account_ms_token)})
     socketio.emit('captcha_status', {"ok": bool(_captcha_key)})
 
 

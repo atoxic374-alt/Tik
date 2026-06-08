@@ -82,12 +82,15 @@
       <span class="cfg-label">
         ACCOUNT &nbsp;<span class="status-dot" id="acct-dot" title="جلسة غير مضبوطة">●</span>
       </span>
-      <div class="cfg-widget">
+      <div class="cfg-widget" style="flex-wrap:wrap;gap:6px">
         <input class="cfg-input" id="cfg-session" type="password"
-               placeholder="sessionid cookie من TikTok" style="width:240px"
+               placeholder="sessionid cookie" style="width:200px"
                oninput="accountDirty()">
+        <input class="cfg-input" id="cfg-mstoken" type="password"
+               placeholder="msToken (اختياري)" style="width:175px"
+               oninput="accountDirty()" title="يقلّل أخطاء الـ claim — اختياري">
         <button class="cfg-btn" onclick="setAccount()">✓ تطبيق</button>
-        <span class="cfg-hint" onclick="toggleHint('hint-session')" title="كيف أحصل عليه؟">?</span>
+        <span class="cfg-hint" onclick="toggleHint('hint-session')" title="كيف أحصل عليهم؟">?</span>
       </div>
     </div>
     <div class="vsep"></div>
@@ -132,11 +135,16 @@
   </div>
   <!-- Session-cookie hint -->
   <div class="hint-box" id="hint-session" style="display:none">
-    <strong>كيف تحصل على sessionid:</strong><br>
+    <strong>كيف تحصل على sessionid (مطلوب):</strong><br>
     1. افتح <b>www.tiktok.com</b> وسجّل دخولك<br>
     2. اضغط F12 ← Application ← Cookies ← www.tiktok.com<br>
     3. ابحث عن <code>sessionid</code> وانسخ قيمته<br>
-    4. الصقه في الحقل أعلاه واضغط ✓ تطبيق
+    4. الصقه في الحقل الأول واضغط ✓ تطبيق<br><br>
+    <strong>كيف تحصل على msToken (اختياري — يقلّل أخطاء الـ claim):</strong><br>
+    1. في نفس صفحة الكوكيز، ابحث عن <code>msToken</code><br>
+    2. انسخ قيمته والصقه في الحقل الثاني<br>
+    3. يساعد في تقليل أخطاء "جرب اسم مستخدم آخر" و CAPTCHA<br><br>
+    <strong>ملاحظة:</strong> إذا انتهت الجلسة، أعد تسجيل الدخول وحدّث الكوكيز
   </div>
 
   <!-- ── PROGRESS BAR ── -->
